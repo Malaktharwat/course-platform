@@ -1,0 +1,191 @@
+// prisma/schema.prisma
+// Run: npx prisma generate && npx prisma db push
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  name              String?
+  email             String    @unique
+  emailVerified     DateTime?
+  password          String?   // hashed with bcrypt
+  image             String?
+  role              Role      @default(STUDENT)
+  isActive          Boolean   @default(true)
+  
+  // Email verification
+  verifyToken       String?   @unique
+  verifyTokenExpiry DateTime?
+  
+  // Password reset
+  resetToken        String?   @unique
+  resetTokenExpiry  DateTime?
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  purchases         Purchase[]
+  progress          VideoProgress[]
+  accounts          Account[]
+  sessions          Session[]
+  
+  @@map("users")
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?
+  access_token       String?
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?
+  session_state      String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model Course {
+  id            String   @id @default(cuid())
+  title         String
+  slug          String   @unique
+  description   String
+  shortDesc     String   // Short description for cards
+  thumbnail     String   // Cloudinary URL
+  price         Float
+  isPublished   Boolean  @default(false)
+  isFeatured    Boolean  @default(false)
+  level         Level    @default(BEGINNER)
+  category      String
+  language      String   @default("English")
+  
+  // Stats (denormalized for performance)
+  totalLessons  Int      @default(0)
+  totalDuration Int      @default(0) // in minutes
+  studentsCount Int      @default(0)
+  rating        Float    @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  sections      Section[]
+  purchases     Purchase[]
+  
+  @@map("courses")
+}
+
+model Section {
+  id        String   @id @default(cuid())
+  title     String
+  order     Int
+  courseId  String
+  
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons   Lesson[]
+  
+  @@map("sections")
+}
+
+model Lesson {
+  id              String    @id @default(cuid())
+  title           String
+  order           Int
+  duration        Int       @default(0) // in seconds
+  isPreview       Boolean   @default(false) // free preview lesson
+  
+  // Cloudinary video data
+  cloudinaryId    String?   // public_id in Cloudinary
+  cloudinaryUrl   String?   // stored but NEVER sent to frontend
+  
+  sectionId       String
+  section         Section   @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  progress        VideoProgress[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@map("lessons")
+}
+
+model Purchase {
+  id            String         @id @default(cuid())
+  userId        String
+  courseId      String
+  amount        Float
+  currency      String         @default("usd")
+  status        PurchaseStatus @default(PENDING)
+  
+  // Stripe
+  stripePaymentIntentId String? @unique
+  stripeSessionId       String? @unique
+  
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  user          User   @relation(fields: [userId], references: [id])
+  course        Course @relation(fields: [courseId], references: [id])
+  
+  @@unique([userId, courseId])
+  @@map("purchases")
+}
+
+model VideoProgress {
+  id           String   @id @default(cuid())
+  userId       String
+  lessonId     String
+  watchedSeconds Int    @default(0)
+  isCompleted  Boolean  @default(false)
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  updatedAt    DateTime @updatedAt
+  
+  @@unique([userId, lessonId])
+  @@map("video_progress")
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+enum Level {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum PurchaseStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+  FAILED
+}
